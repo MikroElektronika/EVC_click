@@ -1,0 +1,202 @@
+{
+Example for Equalizer Click
+
+    Date          : dec 2018.
+    Author        : Katarina Perendic
+
+Test configuration PIC :
+    
+    MCU             : P18F87K22
+    Dev. Board      : EasyPIC PRO v7
+    PIC Compiler ver : v7.2.0.0
+
+---
+
+Description :
+
+The application is composed of three sections :
+
+- System Initialization - Initialzes I2C module
+- Application Initialization - Initialization driver init, default configuration and sets first volume.
+- Application Task - Waits for valid user input and executes functions based on set of valid commands
+
+- Commands :
+  '+' - volume up
+  '-' - volume down
+  'x' - channel up
+  'z' - channel down
+  'm' - mute and unmute
+  
+Additional Functions :
+
+- void _getCurrentChannel( )  - Return current channel
+- void _play( )               - Start new settings of the channel
+- void _mute( )               - mute and unmute
+}
+program Click_Equalizer_PIC;
+
+uses Click_Equalizer_types, Click_Equalizer_config;
+
+var
+    _muteFlag : uint8_t; 
+    _playFlag : uint8_t; 
+    _volume : int8_t; 
+    _channel : uint8_t; 
+    _currentChannel : uint8_t; 
+    demoText : array[20] of char; 
+    
+function  _getCurrentChannel(ch : uint8_t) :  uint8_t; 
+begin
+    if (ch = 1) then 
+    begin
+        result := _EQUALIZER_CHANNEL_1; 
+        exit; 
+    end; 
+    if (ch = 2) then 
+    begin
+        result := _EQUALIZER_CHANNEL_2; 
+        exit; 
+    end; 
+    if (ch = 3) then 
+    begin
+        result := _EQUALIZER_CHANNEL_3; 
+        exit; 
+    end; 
+    if (ch = 4) then 
+    begin
+        result := _EQUALIZER_CHANNEL_4; 
+        exit; 
+    end; 
+    if (ch = 5) then 
+    begin
+        result := _EQUALIZER_CHANNEL_5; 
+        exit; 
+    end; 
+    if (ch = 6) then 
+    begin
+        result := _EQUALIZER_CHANNEL_6; 
+        exit; 
+    end; 
+    result := _EQUALIZER_CHANNEL_1; 
+end;
+
+procedure _play(); 
+begin
+    if ((_playFlag = 1) and (_muteFlag <> 1)) then 
+    begin
+        _currentChannel := _getCurrentChannel(_channel); 
+        equalizer_setVolumeFull(_currentChannel, _volume); 
+        mikrobus_logWrite(' Channel [  ', _LOG_TEXT); 
+        IntToStr(_channel, demoText); 
+        mikrobus_logWrite(demoText, _LOG_TEXT); 
+        mikrobus_logWrite(' ] -- Volume [ ', _LOG_TEXT); 
+        IntToStr(_volume, demoText); 
+        mikrobus_logWrite(demoText, _LOG_TEXT); 
+        mikrobus_logWrite(' ] ', _LOG_LINE); 
+        _playFlag := 0; 
+    end; 
+end;
+
+procedure _mute(); 
+begin
+    if (_muteFlag = 0) then 
+    begin
+        _muteFlag := 1; 
+        equalizer_mute(_EQUALIZER_ALL_CHANNEL_MUTE); 
+        mikrobus_logWrite(' All channels MUTE !!!', _LOG_LINE); 
+    end
+    else 
+    begin
+        _muteFlag := 0; 
+        equalizer_mute(_EQUALIZER_ALL_CHANNEL_UNMUTE); 
+        mikrobus_logWrite(' All channels UNMUTE !!!', _LOG_LINE); 
+    end;
+end;
+
+procedure systemInit(); 
+begin
+    Delay_ms(300); 
+    mikrobus_i2cInit(_MIKROBUS1, @_EQUALIZER_I2C_CFG[0]); 
+    mikrobus_logInit(_LOG_USBUART, 9600); 
+    mikrobus_logWrite(' --- System Init --- ', _LOG_LINE); 
+    Delay_ms(100); 
+end;
+
+procedure applicationInit(); 
+begin
+    eqalizer_i2cDriverInit(T_EQUALIZER_P(@_MIKROBUS1_GPIO), T_EQUALIZER_P(@_MIKROBUS1_I2C), _EQUALIZER_DEVICE_SLAVE_ADDRESS_11); 
+    equalizer_defaultConfiguration(); 
+    mikrobus_logWrite(' --- START EQUALIZER --- ', _LOG_LINE); 
+    equalizer_setVolumePart(_EQUALIZER_CHANNEL_1, _EQUALIZER_SET_VOLUME_0dB, _EQUALIZER_SET_VOLUME_0dB); 
+    equalizer_setVolumePart(_EQUALIZER_CHANNEL_2, _EQUALIZER_SET_VOLUME_0dB, _EQUALIZER_SET_VOLUME_0dB); 
+    Delay_ms(1000); 
+end;
+
+procedure applicationTask(); 
+var
+    dataReady_ : uint8_t; 
+    receivedData_ : char; 
+begin
+    dataReady_ := UART_Rdy_Ptr(); 
+    if (dataReady_ <> 0) then 
+    begin
+        receivedData_ := UART_Rd_Ptr(); 
+        case receivedData_ of
+            'z' :
+            begin
+                dec(_channel);
+                if (_channel < 1) then 
+                begin
+                    _channel := 1; 
+                end; 
+                _playFlag := 1; 
+            end;
+            'x' :
+            begin
+                inc(_channel);
+                if (_channel > 6) then 
+                begin
+                    _channel := 6; 
+                end; 
+                _playFlag := 1; 
+            end;
+            '+' :
+            begin
+                inc(_volume);
+                if (_volume > 0) then 
+                begin
+                    _volume := 0; 
+                end; 
+                _playFlag := 1; 
+            end;
+            '-' :
+            begin
+                dec(_volume);
+                if (_volume < -79) then 
+                begin
+                    _volume := -79; 
+                end; 
+                _playFlag := 1; 
+            end;
+            'm' :
+            begin
+                _mute(); 
+            end;
+        end;
+        _play(); 
+    end; 
+end;
+
+begin
+    _muteFlag := 0;
+    _playFlag := 0;
+    _volume := 0;
+    _channel := 1;
+
+    systemInit(); 
+    applicationInit(); 
+    while (1) do 
+    begin 
+        applicationTask(); 
+    end;
+end.
